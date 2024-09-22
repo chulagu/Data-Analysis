@@ -1,0 +1,46 @@
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Specify the path to your combined JSON file
+combined_file = 'xx.json'
+
+# Load the JSON data from the combined file
+with open(combined_file, 'r') as f:
+    data = json.load(f)
+
+# Create a list to store tweet timestamps
+timestamps = []
+
+# Extract 'created_at' timestamps from the JSON data
+for tweet in data:
+    if 'created_at' in tweet and tweet['created_at']:  # Check if 'created_at' exists and is not empty
+        timestamps.append(tweet['created_at'])  # Assuming 'created_at' is the key for timestamp
+
+# Create a DataFrame from the timestamps
+df = pd.DataFrame({
+    'created_at': pd.to_datetime(timestamps, errors='coerce')  # Convert to datetime format, coerce errors to NaT
+})
+
+# Drop rows with NaN (if any)
+df.dropna(subset=['created_at'], inplace=True)
+
+# Check if DataFrame is empty after cleaning
+if df.empty:
+    print("DataFrame is empty after cleaning. Check your data.")
+    exit()
+
+# Set the 'created_at' column as the index
+df.set_index('created_at', inplace=True)
+
+# Resample the data to get counts per day (you can change 'D' to 'H' for hourly counts)
+tweet_counts = df.resample('D').size()
+
+# Plotting
+plt.figure(figsize=(15, 6))
+tweet_counts.plot()
+plt.title('Number of Tweets Over Time')
+plt.xlabel('Date')
+plt.ylabel('Number of Tweets')
+plt.grid(True)
+plt.show()
