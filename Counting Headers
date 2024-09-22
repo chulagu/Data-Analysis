@@ -1,0 +1,43 @@
+
+import json
+import os
+from collections import defaultdict
+import pandas as pd
+
+# List of JSON file names
+json_files = ['xx.json', 'xx.json']
+
+# Function to recursively extract headers and nested headers
+def extract_headers(data, parent_key='', result=None):
+    if result is None:
+        result = defaultdict(int)
+    if isinstance(data, dict):
+        for key, value in data.items():
+            full_key = f'{parent_key}.{key}' if parent_key else key
+            if isinstance(value, dict):
+                extract_headers(value, full_key, result)
+            elif isinstance(value, list):
+                result[full_key] += 1
+                for item in value:
+                    extract_headers(item, full_key, result)
+            else:
+                result[full_key] += 1
+    return result
+
+# Initialize a dictionary to store the headers and their counts
+headers_count = defaultdict(int)
+
+# Iterate through each JSON file and extract headers and their counts
+for file in json_files:
+    with open(file, 'r') as f:
+        data = json.load(f)
+        for entry in data:
+            headers_count = extract_headers(entry, result=headers_count)
+
+# Convert the result to a DataFrame for better visualization
+df = pd.DataFrame(list(headers_count.items()), columns=['Header', 'Count'])
+
+# Save the result to an Excel file
+df.to_excel('headers_count.xlsx', index=False)
+
+print("Headers and their counts have been saved to 'headers_count.xlsx'")
