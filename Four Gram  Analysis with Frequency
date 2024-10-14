@@ -1,0 +1,59 @@
+import json
+import nltk
+from nltk.util import ngrams
+from nltk.corpus import stopwords
+from collections import Counter
+
+# Load NLTK stopwords
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+
+# Function to clean text
+def clean_text(text):
+    # Remove stopwords and non-alphanumeric characters, convert to lowercase
+    cleaned = [word.lower() for word in text.split() if word.isalnum() and word.lower() not in stop_words]
+    return cleaned
+
+# Function to extract the first four-gram from cleaned text
+def extract_first_fourgram(cleaned_text):
+    fourgrams = list(ngrams(cleaned_text, 4))
+    return fourgrams[0] if fourgrams else None
+
+# Load and process the dataset
+dataset_file = 'xxx.json'
+
+with open(dataset_file, 'r', encoding='utf-8') as file:
+    data = json.load(file)
+
+# Extract text from dataset and clean
+texts = [entry['text'] for entry in data]
+cleaned_texts = [clean_text(text) for text in texts]
+
+# Extract the first four-gram from each cleaned text
+first_fourgram_list = [extract_first_fourgram(cleaned_text) for cleaned_text in cleaned_texts]
+
+# Filter out None values (tweets with less than 4 words)
+first_fourgram_list = [fourgram for fourgram in first_fourgram_list if fourgram]
+
+# Count frequencies of each four-gram
+fourgram_counts = Counter(first_fourgram_list)
+
+# Remove "https co" from the counts
+fourgram_counts = {k: v for k, v in fourgram_counts.items() if 'https' not in k and 'co' not in k}
+
+# Sort the four-grams by their counts in descending order
+sorted_fourgram_counts = sorted(fourgram_counts.items(), key=lambda item: item[1], reverse=True)
+
+# Get the total count of four-grams
+total_fourgrams = sum(fourgram_counts.values())
+
+# Write all four-grams and their counts to a text file
+output_file = 'first_fourgram_counts.txt'
+with open(output_file, 'w', encoding='utf-8') as f:
+    f.write(f"Total number of four-grams: {total_fourgrams}\n")
+    f.write("First Four-grams (excluding 'https co'):\n")
+    for fourgram, count in sorted_fourgram_counts:
+        f.write(f"{fourgram}: {count}\n")
+
+print(f"First four-grams and their counts have been saved to {output_file}")
+
