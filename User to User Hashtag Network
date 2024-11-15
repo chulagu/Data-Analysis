@@ -1,0 +1,77 @@
+import pandas as pd
+import itertools
+import re
+
+# Step 1: Load the dataset
+df = pd.read_csv('xxx.csv', delimiter=';')
+df['created_at'] = pd.to_datetime(df['created_at'], format='%Y-%m-%d', errors='coerce')
+df['year_month'] = df['created_at'].dt.to_period('M')
+
+
+# Function to check if a hashtag is English (contains Latin characters only)
+def is_english_hashtag(hashtag):
+    return bool(re.match(r'^[\u0020-\u007E]+$', hashtag))  # Matches Latin characters
+
+
+# Function to filter English hashtags and count them
+def filter_english_hashtags(hashtags):
+    english_hashtags = {hashtag for hashtag in hashtags if is_english_hashtag(hashtag)}
+    foreign_hashtags = hashtags - english_hashtags
+    return english_hashtags, len(english_hashtags), len(foreign_hashtags)
+
+
+# Step 2: Aggregate hashtags by user for each month
+def aggregate_hashtags_by_user(df, specific_month):
+    df_month = df[df['year_month'] == specific_month]
+    user_hashtags = df_month.groupby('username')['hashtags'].apply(lambda x: ' '.join(x.dropna())).reset_index()
+
+    # Initialize counters
+    total_english = 0
+    total_foreign = 0
+
+    def process_hashtags(hashtags):
+        english_hashtags, num_english, num_foreign = filter_english_hashtags(set(hashtags.split(', ')))
+        nonlocal total_english, total_foreign
+        total_english += num_english
+        total_foreign += num_foreign
+        return english_hashtags
+
+    user_hashtags['hashtags'] = user_hashtags['hashtags'].apply(process_hashtags)
+
+    # Print the counts
+    print(f"In month {specific_month}, found {total_english} English hashtags and {total_foreign} foreign hashtags.")
+
+    return user_hashtags
+
+
+# Step 3: Create user-user pairs based on shared hashtags within the same month
+def create_user_pairs(df, specific_month):
+    user_hashtags = aggregate_hashtags_by_user(df, specific_month)
+    user_pairs = []
+
+    for (user1, tags1), (user2, tags2) in itertools.combinations(user_hashtags.itertuples(index=False), 2):
+        shared_tags = tags1 & tags2  # Intersection of hashtags
+        if shared_tags:
+            user_pairs.append((user1, user2, len(shared_tags)))  # (user1, user2, weight)
+
+    return pd.DataFrame(user_pairs, columns=['source', 'target', 'weight'])
+
+
+# Step 4: Process for all unique months
+unique_months = df['year_month'].unique()
+all_months_results = []
+
+for month in unique_months:
+    user_pairs_df = create_user_pairs(df, month)
+    if not user_pairs_df.empty:
+        user_pairs_df['month'] = month
+        all_months_results.append(user_pairs_df)
+
+# Step 5: Combine results for all months into a single DataFrame
+final_results_df = pd.concat(all_months_results, ignore_index=True)
+
+
+# Step 6: Save the combined results to a CSV file
+csv_file = 'user_to_user_same_hashtag_same_month_filtered.csv'
+final_results_df.to_csv(csv_file, index=False)
+print(f"User-user hashtag pairs for all months (filtered) saved to {csv_file}")
