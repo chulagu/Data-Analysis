@@ -1,0 +1,117 @@
+import os
+import ssl
+import nltk
+import re
+import pandas as pd
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from top2vec import Top2Vec
+
+# Specify the directory for NLTK data
+nltk_data_dir = os.path.expanduser('~/nltk_data')
+
+# Ensure the directory exists
+os.makedirs(nltk_data_dir, exist_ok=True)
+
+# Workaround for SSL verification issue
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+# Download the stopwords and punkt
+nltk.download('stopwords', download_dir=nltk_data_dir)
+nltk.download('punkt', download_dir=nltk_data_dir)
+
+# Append the directory to NLTK's data path
+nltk.data.path.append(nltk_data_dir)
+
+# Load the Excel file
+df = pd.read_excel('xxxxx.xlsx')
+
+# Extract and clean the text field from the dataset
+def clean_hashtags(text):
+    return re.sub(r"#\w+", "", text)
+
+df['text'] = df['text'].apply(clean_hashtags)
+
+# Remove URLs and non-alphanumeric characters from the text
+def preprocess_text(text):
+    text = re.sub(r'http\S+|www.\S+', '', text)
+    text = re.sub(r'[^A-Za-z0-9\s]+', '', text)
+    text = text.lower()
+    return text
+
+df['text'] = df['text'].apply(preprocess_text)
+
+# Define custom tokenizer to remove stopwords and tokenize
+stop_words = set(stopwords.words('english'))
+
+def custom_tokenizer(text):
+    tokens = word_tokenize(text)
+    filtered_tokens = [word for word in tokens if word not in stop_words]
+    return filtered_tokens
+
+# Train the Top2Vec model
+model = Top2Vec(documents=df['text'].tolist(), tokenizer=custom_tokenizer)
+
+# Check the returned value from get_documents_topics
+doc_ids = list(range(len(df)))  # Create document IDs if not already present
+topics_result = model.get_documents_topics(doc_ids=doc_ids)
+
+# Unpack the result correctly
+if isinstance(topics_result, tuple):
+    topic_ids, topic_scores, _ = topics_result
+else:
+    raise ValueError("Unexpected return type from get_documents_topics")
+
+# Assign topics to each tweet
+df['topic'] = [topic_ids[i] if i < len(topic_ids) else None for i in range(len(df))]
+
+# Convert 'created_at' to datetime and remove timezone information if present
+df['created_at'] = pd.to_datetime(df['created_at']).dt.tz_localize(None)
+
+# Function to extract engagement metrics and other details
+def extract_details(row):
+    return pd.Series({
+        'retweet_count': row.get('public_metrics.retweet_count', 0),
+        'reply_count': row.get('public_metrics.reply_count', 0),
+        'like_count': row.get('public_metrics.like_count', 0),
+        'quote_count': row.get('public_metrics.quote_count', 0),
+        'created_at': row.get('created_at', pd.NaT),
+        'username': row.get('author.username'),
+        'follower_count': row.get('author.public_metrics.followers_count', 0),
+        'topic': row.get('topic')
+    })
+
+# Apply the function to extract engagement metrics and other details
+df[['retweet_count', 'reply_count', 'like_count', 'quote_count', 'created_at', 'username', 'follower_count', 'topic']] = df.apply(extract_details, axis=1)
+
+# Group by author_id and username and aggregate tweet count, total engagement, and follower count
+author_summary = df.groupby(['author_id', 'username']).agg({
+    'text': 'size',           # Count tweets per author_id
+    'retweet_count': 'sum',
+    'reply_count': 'sum',
+    'like_count': 'sum',
+    'quote_count': 'sum',
+    'created_at': lambda x: ', '.join(x.dt.date.astype(str).unique()),  # List all unique tweet dates
+    'follower_count': 'max',  # Get the maximum follower count
+    'topic': lambda x: ', '.join(x.astype(str).unique())  # List all unique topics
+}).reset_index()
+
+# Rename columns for clarity
+author_summary.rename(columns={
+    'text': 'tweet_count',
+    'created_at': 'tweet_dates',
+    'topic': 'topics'
+}, inplace=True)
+
+# Print the first few rows to verify
+print(author_summary.head())
+
+# Optionally, save to an Excel file
+output_file = 'authors_summary_with_topics.xlsx'
+author_summary.to_excel(output_file, index=False)
+print(f"Results saved to {output_file}")
